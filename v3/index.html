@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VTL — Compositional Prior</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Archivo+Narrow:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0b; --surface: #111114; --border: #1e1e24;
+    --text: #c8c8d4; --dim: #4a4a5a; --accent: #e8d5a3;
+    --hot: #ff6b35; --cold: #4ecdc4;
+    --mono: 'Space Mono', monospace;
+  }
+  html, body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:var(--mono); overflow:hidden; }
+  #layout { display:grid; grid-template-columns:1fr 230px; grid-template-rows:44px 1fr; width:100vw; height:100vh; }
+  #header { grid-column:1/-1; display:flex; align-items:center; padding:0 16px; border-bottom:1px solid var(--border); gap:24px; }
+  .title { font-size:11px; font-weight:700; letter-spacing:0.12em; color:var(--accent); text-transform:uppercase; }
+  .subtitle { font-size:10px; color:var(--dim); letter-spacing:0.06em; }
+  .coords-live { margin-left:auto; display:flex; gap:16px; font-size:10px; color:var(--dim); }
+  .coords-live span { color:var(--text); }
+  #canvas-wrap { position:relative; background:var(--bg); overflow:hidden; }
+  #canvas-wrap canvas { display:block; cursor:crosshair; }
+  #click-label { position:absolute; bottom:10px; left:12px; font-family:'Space Mono',monospace; font-size:8.5px; color:rgba(232,213,163,0.55); letter-spacing:0.08em; pointer-events:none; }
+  #controls { background:var(--surface); border-left:1px solid var(--border); overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:13px; }
+  .ctrl-group label { display:block; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--dim); margin-bottom:5px; }
+  .axis-label { font-size:10px; color:var(--accent); margin-bottom:7px; font-weight:700; }
+  .slider-row { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .sname { font-size:9px; color:var(--dim); width:24px; flex-shrink:0; }
+  input[type=range] { flex:1; -webkit-appearance:none; height:2px; background:var(--border); outline:none; cursor:pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:10px; border-radius:50%; background:var(--accent); cursor:pointer; }
+  .sval { font-size:9px; color:var(--text); width:38px; text-align:right; flex-shrink:0; }
+  .divider { height:1px; background:var(--border); flex-shrink:0; }
+  .mode-btns { display:flex; flex-direction:column; gap:3px; }
+  .mode-btn { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; text-transform:uppercase; padding:5px 8px; background:transparent; border:1px solid var(--border); color:var(--dim); cursor:pointer; text-align:left; transition:all 0.15s; }
+  .mode-btn:hover, .mode-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(232,213,163,0.06); }
+  .preset-btn { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; text-transform:uppercase; padding:5px 8px; background:transparent; border:1px solid var(--border); color:var(--dim); cursor:pointer; width:100%; text-align:left; transition:all 0.15s; margin-bottom:3px; }
+  .preset-btn:hover { border-color:var(--hot); color:var(--hot); }
+  #flag-display { font-size:9px; color:var(--hot); letter-spacing:0.08em; min-height:14px; }
+  #wob-display { font-size:8.5px; line-height:1.75; color:var(--dim); border-left:2px solid var(--border); padding-left:8px; }
+  .wob-symbol { color:var(--accent); font-weight:700; }
+  .wob-inv { color:var(--cold); }
+  .wob-patch { color:#a8c4a0; font-style:italic; margin-top:3px; font-size:8px; }
+  .info-block { font-size:9px; line-height:1.65; color:var(--dim); }
+  .info-block strong { color:var(--text); }
+  .wob-mode-btns { display:flex; flex-direction:column; gap:3px; }
+  .wob-mode-btn { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; padding:5px 8px; background:transparent; border:1px solid var(--border); color:var(--dim); cursor:pointer; text-align:left; transition:all 0.2s; }
+  .wob-mode-btn:hover { border-color:var(--cold); color:var(--cold); }
+  .wob-mode-btn.wob-active { border-color:var(--cold); color:var(--cold); background:rgba(78,205,196,0.07); }
+  #wob-mode-label { font-size:9px; color:var(--cold); letter-spacing:0.08em; min-height:14px; margin-top:2px; }
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="header">
+    <div class="title">VTL — Compositional Prior</div>
+    <div class="subtitle">gradient field / kernel space navigation</div>
+    <div class="coords-live">
+      <div>Δx <span id="live-dx">0.02</span></div>
+      <div>rᵥ <span id="live-rv">0.87</span></div>
+      <div>ρᵣ <span id="live-rho">12.0</span></div>
+      <div>θ <span id="live-theta">12°</span></div>
+      <div>μ <span id="live-mu">0.04</span></div>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <div id="click-label"></div>
+  </div>
+  <div id="controls">
+
+    <div class="ctrl-group">
+      <div class="axis-label">AXIS 1 — CENTER ↔ PERIPHERY</div>
+      <div class="slider-row"><div class="sname">Δx</div><input type="range" id="s-dx" min="-50" max="50" value="2" step="1"><div class="sval" id="v-dx">0.02</div></div>
+      <div class="slider-row"><div class="sname">Δy</div><input type="range" id="s-dy" min="-50" max="50" value="-1" step="1"><div class="sval" id="v-dy">-0.01</div></div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <div class="axis-label">AXIS 2 — VOID ↔ DENSITY</div>
+      <div class="slider-row"><div class="sname">rᵥ</div><input type="range" id="s-rv" min="0" max="100" value="87" step="1"><div class="sval" id="v-rv">0.87</div></div>
+      <div class="slider-row"><div class="sname">ρᵣ</div><input type="range" id="s-rho" min="0" max="300" value="12" step="1"><div class="sval" id="v-rho">12.0</div></div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <div class="axis-label">AXIS 3 — FLOW ↔ RESISTANCE</div>
+      <div class="slider-row"><div class="sname">θ</div><input type="range" id="s-theta" min="-180" max="180" value="12" step="1"><div class="sval" id="v-theta">12°</div></div>
+      <div class="slider-row"><div class="sname">μ</div><input type="range" id="s-mu" min="0" max="100" value="4" step="1"><div class="sval" id="v-mu">0.04</div></div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <label>flags</label>
+      <div id="flag-display">CENTER_LOCK  LOW_TENSION</div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <label>symbol — relation</label>
+      <div id="wob-display"><div class="wob-symbol">—</div></div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <label>mode</label>
+      <div class="mode-btns">
+        <button class="mode-btn active" data-mode="field">gradient field</button>
+        <button class="mode-btn" data-mode="particles">mass particles</button>
+        <button class="mode-btn" data-mode="attractor">attractor map</button>
+        <button class="mode-btn" data-mode="kernel">kernel space</button>
+      </div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <label>animation</label>
+      <div class="slider-row"><div class="sname">spd</div><input type="range" id="s-speed" min="1" max="100" value="40" step="1"><div class="sval" id="v-speed">0.40</div></div>
+      <div class="slider-row"><div class="sname">pop</div><input type="range" id="s-pop" min="20" max="600" value="180" step="10"><div class="sval" id="v-pop">180</div></div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <label>presets</label>
+      <button class="preset-btn" id="btn-reset">AI default</button>
+      <button class="preset-btn" id="btn-sora">→ sora attractor</button>
+      <button class="preset-btn" id="btn-mj">→ midjourney basin</button>
+    </div>
+    <div class="divider"></div>
+
+    <div class="divider"></div>
+
+    <div class="ctrl-group">
+      <label>#WOB modes → kernel</label>
+      <div class="wob-mode-btns">
+        <button class="wob-mode-btn" data-wob="wob">#Wob — being thought</button>
+        <button class="wob-mode-btn" data-wob="wom">#Wom — musical thought</button>
+        <button class="wob-mode-btn" data-wob="wib">#Wib — imagined thought</button>
+        <button class="wob-mode-btn" data-wob="wod">#Wod — diagrammed thought</button>
+      </div>
+      <div id="wob-mode-label"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="info-block">
+      <strong>VTL</strong> measures compositional structure as a gradient-field problem. Mass = structural activity in the pixel field. Not semantic. Not aesthetic.<br><br>
+      <strong>#WOB modes</strong> drive the kernel state — each philosophical mode maps to a distinct compositional territory.
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────────
+const S = { dx:0.02, dy:-0.01, rv:0.87, rho:12.0, theta:12, mu:0.04, speed:0.40, pop:180, mode:'field', t:0 };
+
+// ── FLAGS ──────────────────────────────────────────────────────────────────────
+function getFlags() {
+  const f = [];
+  if (Math.abs(S.dx)<0.05 && Math.abs(S.dy)<0.05) f.push('CENTER_LOCK');
+  if (S.rv>0.85) f.push('ACTIVATE_PERIPHERY');
+  if (S.rho>15)  f.push('DECOMPRESS');
+  if (S.mu<0.05) f.push('LOW_TENSION');
+  if (Math.abs(S.theta)<15) f.push('FLOW_RESOLVED');
+  return f;
+}
+
+// ── WOB ENGINE ─────────────────────────────────────────────────────────────────
+function computeWOB() {
+  const f = getFlags();
+  const cl = f.includes('CENTER_LOCK'), lt = f.includes('LOW_TENSION'),
+        ap = f.includes('ACTIVATE_PERIPHERY'), dc = f.includes('DECOMPRESS'),
+        fr = f.includes('FLOW_RESOLVED');
+
+  if (cl && lt)  return { sym:'default gravity',     inv:'authored displacement',  neg:'pure noise',        tension:'machine prior ↔ human intent',       patch:'displace_mass + increase_tension' };
+  if (cl)        return { sym:'center lock',          inv:'peripheral scatter',     neg:'unmeasurable void', tension:'convergence ↔ displacement',          patch:'displace_mass — use coordinate, not style' };
+  if (ap && fr)  return { sym:'quiet field',          inv:'turbulent density',      neg:'flat uniformity',   tension:'breath ↔ structure',                  patch:'activate_periphery — push energy to edges' };
+  if (lt)        return { sym:'smooth resolution',    inv:'directional resistance', neg:'static / no flow',  tension:'flow ↔ friction',                     patch:'increase_tension — introduce opposing forces' };
+  if (dc)        return { sym:'compressed mass',      inv:'distributed space',      neg:'empty frame',       tension:'density ↔ expansion',                 patch:'decompress_packing — separate planes' };
+  if (Math.abs(S.dx)>0.3) return { sym:'displaced centroid', inv:'frame equilibrium', neg:'no measurable mass', tension:'subject anchor ↔ radial reversion', patch:'break_radial_prior — anchor radial to subject' };
+  return          { sym:'authored territory',  inv:'default basin',          neg:'no signal',         tension:'intention ↔ prior',                   patch:'no operator fires — outside default range' };
+}
+
+function renderWOB() {
+  const w = computeWOB();
+  document.getElementById('wob-display').innerHTML =
+    `<div><span class="wob-symbol">${w.sym}</span></div>` +
+    `<div class="wob-inv">⌐ ${w.inv}</div>` +
+    `<div style="color:#3a3a50">∅ ${w.neg}</div>` +
+    `<div style="color:#555;font-size:8px;margin-top:2px">${w.tension}</div>` +
+    `<div class="wob-patch">${w.patch}</div>`;
+}
+
+function updateAll() {
+  const f = getFlags();
+  document.getElementById('flag-display').textContent = f.length ? f.join('  ') : 'NONE';
+  document.getElementById('live-dx').textContent  = S.dx.toFixed(2);
+  document.getElementById('live-rv').textContent  = S.rv.toFixed(2);
+  document.getElementById('live-rho').textContent = S.rho.toFixed(1);
+  document.getElementById('live-theta').textContent = S.theta+'°';
+  document.getElementById('live-mu').textContent  = S.mu.toFixed(2);
+  renderWOB();
+}
+
+// ── SLIDERS ────────────────────────────────────────────────────────────────────
+function bind(id, vid, key, scale, fmt) {
+  const sl=document.getElementById(id), vd=document.getElementById(vid);
+  sl.addEventListener('input',()=>{ S[key]=sl.value*scale; vd.textContent=fmt(S[key]); updateAll(); });
+}
+bind('s-dx','v-dx','dx',0.01,v=>v.toFixed(2));
+bind('s-dy','v-dy','dy',0.01,v=>v.toFixed(2));
+bind('s-rv','v-rv','rv',0.01,v=>v.toFixed(2));
+bind('s-rho','v-rho','rho',0.1,v=>v.toFixed(1));
+bind('s-theta','v-theta','theta',1,v=>v+'°');
+bind('s-mu','v-mu','mu',0.01,v=>v.toFixed(2));
+bind('s-speed','v-speed','speed',0.01,v=>v.toFixed(2));
+bind('s-pop','v-pop','pop',1,v=>Math.round(v));
+
+// ── MODES ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click',()=>{
+  document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); S.mode=b.dataset.mode;
+}));
+
+// ── PRESETS ────────────────────────────────────────────────────────────────────
+function preset(v) {
+  Object.assign(S,v);
+  document.getElementById('s-dx').value    = Math.round(S.dx*100);    document.getElementById('v-dx').textContent    = S.dx.toFixed(2);
+  document.getElementById('s-dy').value    = Math.round(S.dy*100);    document.getElementById('v-dy').textContent    = S.dy.toFixed(2);
+  document.getElementById('s-rv').value    = Math.round(S.rv*100);    document.getElementById('v-rv').textContent    = S.rv.toFixed(2);
+  document.getElementById('s-rho').value   = Math.round(S.rho*10);    document.getElementById('v-rho').textContent   = S.rho.toFixed(1);
+  document.getElementById('s-theta').value = S.theta;                 document.getElementById('v-theta').textContent = S.theta+'°';
+  document.getElementById('s-mu').value    = Math.round(S.mu*100);    document.getElementById('v-mu').textContent    = S.mu.toFixed(2);
+  updateAll();
+}
+// ── WOB MODE PRESETS ───────────────────────────────────────────────────────────
+// Each WOB mode maps to a distinct kernel territory.
+const WOB_PRESETS = {
+  wob: { dx:0.03, dy:-0.02, rv:0.88, rho:8.0,  theta:5,   mu:0.03,
+         label:'#Wob — hovering, unresolved, breath-heavy' },
+  wom: { dx:0.12, dy: 0.00, rv:0.72, rho:14.0, theta:45,  mu:0.18,
+         label:'#Wom — directional pulse, cadenced flow' },
+  wib: { dx:0.28, dy:-0.12, rv:0.91, rho:6.0,  theta:-22, mu:0.02,
+         label:'#Wib — peripheral scatter, atmospheric, serendipitous' },
+  wod: { dx:0.02, dy: 0.01, rv:0.55, rho:28.0, theta:0,   mu:0.24,
+         label:'#Wod — compressed structure, architectural, resolved' },
+};
+
+let wobAnimTarget = null, wobAnimStart = null, wobAnimDur = 800;
+
+function wobTransition(key) {
+  const target = WOB_PRESETS[key];
+  wobAnimStart = {
+    dx:S.dx, dy:S.dy, rv:S.rv, rho:S.rho, theta:S.theta, mu:S.mu,
+    t: performance.now()
+  };
+  wobAnimTarget = { ...target, key };
+  document.getElementById('wob-mode-label').textContent = target.label;
+  document.querySelectorAll('.wob-mode-btn').forEach(b => {
+    b.classList.toggle('wob-active', b.dataset.wob === key);
+  });
+}
+
+function tickWobAnim() {
+  if (!wobAnimTarget || !wobAnimStart) return;
+  const elapsed = performance.now() - wobAnimStart.t;
+  const raw = Math.min(elapsed / wobAnimDur, 1);
+  // ease in-out cubic
+  const t = raw < 0.5 ? 4*raw*raw*raw : 1 - Math.pow(-2*raw+2,3)/2;
+  const keys = ['dx','dy','rv','rho','theta','mu'];
+  keys.forEach(k => { S[k] = wobAnimStart[k] + (wobAnimTarget[k] - wobAnimStart[k]) * t; });
+  // sync sliders
+  document.getElementById('s-dx').value    = Math.round(S.dx*100);    document.getElementById('v-dx').textContent    = S.dx.toFixed(2);
+  document.getElementById('s-dy').value    = Math.round(S.dy*100);    document.getElementById('v-dy').textContent    = S.dy.toFixed(2);
+  document.getElementById('s-rv').value    = Math.round(S.rv*100);    document.getElementById('v-rv').textContent    = S.rv.toFixed(2);
+  document.getElementById('s-rho').value   = Math.round(S.rho*10);    document.getElementById('v-rho').textContent   = S.rho.toFixed(1);
+  document.getElementById('s-theta').value = Math.round(S.theta);     document.getElementById('v-theta').textContent = Math.round(S.theta)+'°';
+  document.getElementById('s-mu').value    = Math.round(S.mu*100);    document.getElementById('v-mu').textContent    = S.mu.toFixed(2);
+  updateAll();
+  if (raw >= 1) wobAnimTarget = null;
+}
+
+document.querySelectorAll('.wob-mode-btn').forEach(b => {
+  b.addEventListener('click', () => wobTransition(b.dataset.wob));
+});
+
+document.getElementById('btn-reset').addEventListener('click',()=>preset({dx:0.02,dy:-0.01,rv:0.87,rho:12.0,theta:12,mu:0.04}));
+document.getElementById('btn-sora').addEventListener('click', ()=>preset({dx:0.38,dy:-0.06,rv:0.73,rho:8.2, theta:22, mu:0.06}));
+document.getElementById('btn-mj').addEventListener('click',   ()=>preset({dx:-0.09,dy:0.04,rv:0.61,rho:21.4,theta:-35,mu:0.12}));
+
+updateAll();
+
+// ── CLICK → KERNEL ────────────────────────────────────────────────────────────
+// Maps canvas click position to VTL kernel coordinates.
+// Faithful to kernel definitions: Δx/Δy normalized from frame center [-0.5, +0.5]
+// All other coordinates derived geometrically from that position.
+
+let clickRipples = []; // [{x, y, age, maxAge}]
+
+function measureClick(canvasX, canvasY, cW, cH) {
+  // Δx, Δy — normalized centroid offset from frame center (kernel exact)
+  const dx = (canvasX - cW / 2) / cW;
+  const dy = (canvasY - cH / 2) / cH;
+
+  // radial distance from center, normalized [0, ~0.7]
+  const dist = Math.hypot(dx, dy) / Math.hypot(0.5, 0.5);
+  const distN = Math.min(dist, 1.0);
+
+  // rᵥ — void ratio: center = high void (AI default ~0.87), periphery = lower
+  // Kernel: rᵥ = fraction of frame below absolute gradient threshold
+  // At center the model produces smooth fields (high void). Periphery = more activity.
+  const rv = 0.90 - distN * 0.38;
+
+  // ρᵣ — packing density: inversely related to void
+  // Peripheral clicks = denser packing (more compressed mass)
+  const rho = 6.0 + distN * 28.0;
+
+  // θ — dominant flow angle: direction vector from center to click
+  // The click defines a directional axis in the gradient field
+  const theta = Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
+
+  // μ — cohesion: near center = low (smooth, unresisted default)
+  // Far from center = higher cohesion (field must hold structure)
+  const mu = 0.02 + distN * 0.22;
+
+  return { dx, dy, rv, rho, theta, mu };
+}
+
+function applyClickMeasure(dx, dy, rv, rho, theta, mu, cW, cH, clickX, clickY) {
+  // Animate into measured state using same easing as WOB modes
+  wobAnimStart = { dx:S.dx, dy:S.dy, rv:S.rv, rho:S.rho, theta:S.theta, mu:S.mu, t:performance.now() };
+  wobAnimTarget = { dx, dy, rv, rho, theta, mu, key:null };
+  wobAnimDur = 600;
+
+  // Clear WOB mode active state — click overrides
+  document.querySelectorAll('.wob-mode-btn').forEach(b => b.classList.remove('wob-active'));
+  document.getElementById('wob-mode-label').textContent = '';
+
+  // Show click label
+  document.getElementById('click-label').textContent =
+    `click → Δx:${dx.toFixed(2)}  Δy:${dy.toFixed(2)}  rᵥ:${rv.toFixed(2)}  ρᵣ:${rho.toFixed(1)}  θ:${theta}°  μ:${mu.toFixed(2)}`;
+
+  // Add ripple
+  clickRipples.push({ x:clickX, y:clickY, age:0, maxAge:55 });
+}
+
+// ── P5 ─────────────────────────────────────────────────────────────────────────
+new p5(p => {
+  let particles=[], W, H, flowField=[], COLS, ROWS;
+  const CELL=14;
+
+  class Pt {
+    constructor(){ this.reset(); }
+    reset(){
+      const cx=W*(0.5+S.dx), cy=H*(0.5+S.dy);
+      const sp=W*(0.35+S.rv*0.35)*(1-S.rho/400);
+      this.x=p.constrain(p.randomGaussian(cx,sp),2,W-2);
+      this.y=p.constrain(p.randomGaussian(cy,sp),2,H-2);
+      this.vx=0; this.vy=0; this.age=0; this.life=p.random(80,220);
+      this.r=p.lerp(0.6,2.4,S.rho/300);
+    }
+    tick(){
+      const col=Math.floor(p.constrain(this.x/W*COLS,0,COLS-1));
+      const row=Math.floor(p.constrain(this.y/H*ROWS,0,ROWS-1));
+      const ang=flowField[col+row*COLS]||0;
+      this.vx+=Math.cos(ang)*S.speed*1.8; this.vy+=Math.sin(ang)*S.speed*1.8;
+      const pull=S.rv>0.7?-0.003:0.005;
+      this.vx+=(W*(0.5+S.dx)-this.x)*pull; this.vy+=(H*(0.5+S.dy)-this.y)*pull;
+      this.vx*=0.94; this.vy*=0.94; this.x+=this.vx; this.y+=this.vy; this.age++;
+      if(this.age>this.life||this.x<0||this.x>W||this.y<0||this.y>H) this.reset();
+    }
+    show(mode){
+      const a=p.map(this.age,0,this.life,0,1)*p.map(this.age,0,this.life*0.2,0,1);
+      const a8=Math.floor(a*200);
+      if(mode==='particles'){
+        p.fill(p.lerp(100,235,1-S.rho/300),p.lerp(107,213,S.rv),130,a8);
+        p.noStroke(); p.ellipse(this.x,this.y,this.r*2);
+      } else {
+        const mt=S.mu/0.3;
+        p.stroke(p.lerp(78,232,mt),p.lerp(130,213,1-mt),p.lerp(194,163,S.rv),a8);
+        p.strokeWeight(this.r*0.8); p.point(this.x,this.y);
+      }
+    }
+  }
+
+  function buildFlow(){
+    const tR=(S.theta*Math.PI)/180, ns=p.map(S.mu,0,0.3,0.0015,0.006);
+    const tOff=S.t*S.speed*0.003;
+    for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+      const x=c/COLS, y=r/ROWS;
+      let ang=tR;
+      ang+=p.map(p.noise(c*ns*100,r*ns*100,tOff),0,1,-p.map(S.mu,0,0.3,p.TWO_PI,p.TWO_PI*0.2)/2,p.map(S.mu,0,0.3,p.TWO_PI,p.TWO_PI*0.2)/2);
+      ang=p.lerp(ang,Math.atan2(0.5+S.dy-y,0.5+S.dx-x),p.map(S.rv,0.3,1.0,0.6,-0.2));
+      flowField[c+r*COLS]=ang;
+    }
+  }
+
+  function drawField(){
+    const cx=W*(0.5+S.dx),cy=H*(0.5+S.dy);
+    for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+      const x=c*CELL+CELL/2, y=r*CELL+CELL/2;
+      const ang=flowField[c+r*COLS], len=CELL*0.38;
+      const dx2=Math.cos(ang)*len, dy2=Math.sin(ang)*len;
+      const dist=Math.hypot(x-cx,y-cy)/Math.hypot(W,H);
+      const al=p.map(dist,0,0.7,140,18);
+      const mt=S.mu/0.3;
+      const gr=p.lerp(30,78,mt),gg=p.lerp(50,130,1-mt),gb=p.lerp(70,194,S.rv);
+      p.stroke(gr,gg,gb,al); p.strokeWeight(0.7);
+      p.line(x-dx2/2,y-dy2/2,x+dx2/2,y+dy2/2);
+      p.stroke(gr+40,gg+40,gb+40,al*0.7); p.strokeWeight(0.5);
+      const hx=x+dx2/2,hy=y+dy2/2,al2=Math.PI*0.85;
+      p.line(hx,hy,hx+Math.cos(ang+al2)*len*0.18,hy+Math.sin(ang+al2)*len*0.18);
+      p.line(hx,hy,hx+Math.cos(ang-al2)*len*0.18,hy+Math.sin(ang-al2)*len*0.18);
+    }
+    p.noFill(); p.stroke(232,213,163,55); p.strokeWeight(0.8); p.ellipse(cx,cy,18,18);
+    p.stroke(232,213,163,28); p.strokeWeight(0.5);
+    p.line(cx-12,cy,cx+12,cy); p.line(cx,cy-12,cx,cy+12);
+  }
+
+  function pullArrow(fcx,fcy,mx,my){
+    const dx2=fcx-mx,dy2=fcy-my,d=Math.hypot(dx2,dy2);
+    if(d<5) return;
+    const nx=dx2/d,ny=dy2/d,len=Math.min(d*0.32,18);
+    const ex=mx+nx*len,ey=my+ny*len;
+    p.stroke(180,60,60,55); p.strokeWeight(0.7);
+    p.line(mx+nx*5,my+ny*5,ex,ey);
+    const a=Math.atan2(ny,nx);
+    p.line(ex,ey,ex+Math.cos(a+2.6)*4,ey+Math.sin(a+2.6)*4);
+    p.line(ex,ey,ex+Math.cos(a-2.6)*4,ey+Math.sin(a-2.6)*4);
+  }
+
+  function drawAttractor(){
+    const keys=['default','mj','sora','current'];
+    const labels=['AI DEFAULT','MIDJOURNEY','SORA','CURRENT'];
+    const mg=W*0.02, PW=(W-mg*5)/4, PH=H*0.56, py=H*0.46;
+    const ph=S.t*0.018; // animation phase
+
+    keys.forEach((key,i)=>{
+      const px=mg+i*(PW+mg)+PW/2;
+
+      // frame
+      p.noFill(); p.stroke(30,32,42); p.strokeWeight(1);
+      p.rect(px-PW/2,py-PH/2,PW,PH,2);
+
+      // radial rings — ALWAYS frame-centered, identical in every panel
+      const maxR=Math.min(PW,PH)*0.47;
+      const configs={default:[5,5.0,24],mj:[6,4.8,17],sora:[5,5.6,22],current:[5,5.2,20]};
+      const [rc,rs,ra]=configs[key];
+      for(let r=1;r<=rc;r++){
+        p.noFill(); p.stroke(175,55,55,ra+r*5); p.strokeWeight(0.6);
+        p.ellipse(px,py,maxR*(r/rs)*2,maxR*(r/rs)*1.75);
+      }
+
+      // mass blobs
+      p.noStroke();
+      if(key==='default'){
+        const pulse=1+Math.sin(ph*0.7)*0.04;
+        p.fill(60,80,220,200);
+        p.ellipse(px,py-PH*0.02,PW*0.30*pulse,PH*0.23*pulse);
+
+      } else if(key==='mj'){
+        // counterweight pair — oscillate against each other
+        const osc=Math.sin(ph)*PW*0.04;
+        p.fill(60,80,220,195);
+        p.ellipse(px-PW*0.17+osc,  py-PH*0.13-osc*0.5, PW*0.25,PH*0.19);
+        p.fill(60,80,220,182);
+        p.ellipse(px+PW*0.13-osc,  py+PH*0.15+osc*0.5, PW*0.24,PH*0.18);
+        // tension line
+        p.stroke(78,205,196,28+Math.abs(Math.sin(ph))*22); p.strokeWeight(0.7);
+        p.line(px-PW*0.17+osc,py-PH*0.13-osc*0.5,px+PW*0.13-osc,py+PH*0.15+osc*0.5);
+        // pull-back arrows showing radial reversion to frame center
+        pullArrow(px,py,px-PW*0.17+osc,py-PH*0.13-osc*0.5);
+        pullArrow(px,py,px+PW*0.13-osc,py+PH*0.15+osc*0.5);
+
+      } else if(key==='sora'){
+        // dominant mass + orbiting satellite
+        const oR=PW*0.19;
+        const domX=px+Math.cos(ph*0.55)*oR*0.45+PW*0.06;
+        const domY=py+Math.sin(ph*0.55)*oR*0.3+PH*0.05;
+        p.fill(60,80,220,210);
+        p.ellipse(domX,domY,PW*0.31,PH*0.24);
+        const satX=px+Math.cos(ph*0.55+Math.PI)*oR*0.65;
+        const satY=py+Math.sin(ph*0.55+Math.PI)*oR*0.45-PH*0.09;
+        p.fill(60,80,220,150);
+        p.ellipse(satX,satY,PW*0.15,PH*0.11);
+        // faint orbit trace
+        p.noFill(); p.stroke(60,80,220,16); p.strokeWeight(0.5);
+        p.ellipse(px+PW*0.06,py+PH*0.05,oR*0.9,oR*0.6);
+
+      } else { // CURRENT — render live state as behavioral diagram
+        const f=getFlags();
+        const isCL=f.includes('CENTER_LOCK');
+        const isDual=S.rv<0.70&&S.rho>14;
+        const pulse2=1+Math.sin(ph*0.7)*0.04;
+        if(isCL){
+          p.fill(232,213,163,185);
+          p.ellipse(px,py-PH*0.02,PW*0.28*pulse2,PH*0.22*pulse2);
+        } else if(isDual){
+          const osc2=Math.sin(ph)*PW*0.03;
+          const mx=px+S.dx*PW*1.3;
+          p.fill(232,213,163,190);
+          p.ellipse(mx+osc2,py-PH*0.10,PW*0.24,PH*0.19);
+          p.fill(232,213,163,155);
+          p.ellipse(px-S.dx*PW*0.8-osc2,py+PH*0.14,PW*0.22,PH*0.17);
+          p.stroke(232,213,163,26); p.strokeWeight(0.7);
+          p.line(mx+osc2,py-PH*0.10,px-S.dx*PW*0.8-osc2,py+PH*0.14);
+        } else {
+          const mx=p.constrain(px+S.dx*PW*1.6,px-PW*0.42,px+PW*0.42);
+          const my=p.constrain(py+S.dy*PH*1.5,py-PH*0.42,py+PH*0.42);
+          const sz=p.map(S.rho,0,30,0.18,0.36);
+          p.fill(232,213,163,200);
+          p.ellipse(mx,my,PW*sz*pulse2,PH*(sz*0.76)*pulse2);
+          pullArrow(px,py,mx,my);
+        }
+      }
+
+      // label
+      p.fill(200,200,210); p.noStroke(); p.textFont('Space Mono');
+      p.textSize(8.5); p.textStyle(p.BOLD); p.textAlign(p.LEFT);
+      p.text(labels[i],px-PW/2,py-PH/2-13);
+      p.textStyle(p.NORMAL);
+
+      // desc lines
+      const descs={
+        default:['single mass','frame-locked radial','CENTER_LOCK default'],
+        mj:     ['dual opposing mass','wide gradient pull','counterweight lock'],
+        sora:   ['dominant + satellite','rigid radial window','breakable → mass shift'],
+        current: buildCurDesc(),
+      };
+      p.fill(74,74,90); p.textSize(7.5);
+      descs[key].forEach((ln,j)=>p.text(ln,px-PW/2,py+PH/2+11+j*10));
+    });
+
+    // shared radial-lock header annotation
+    const ya=py-PH/2-28;
+    p.stroke(175,55,55,32); p.strokeWeight(0.5);
+    p.line(mg+PW/2,ya,W-mg-PW/2,ya);
+    keys.forEach((_,i)=>{
+      const px2=mg+i*(PW+mg)+PW/2;
+      p.stroke(175,55,55,32);
+      p.line(px2,ya,px2,py-PH/2-2);
+    });
+    p.fill(100,40,40); p.noStroke(); p.textSize(7.5); p.textAlign(p.CENTER);
+    p.text('radial field anchors to frame center in all engines',W/2,ya-5);
+    p.textAlign(p.LEFT);
+  }
+
+  function buildCurDesc(){
+    const f=getFlags();
+    const d=[];
+    if(f.includes('CENTER_LOCK')) d.push('→ matches DEFAULT');
+    else if(Math.abs(S.dx)>0.28) d.push('→ outside all basins');
+    else d.push('→ between basins');
+    if(f.includes('LOW_TENSION')) d.push('flow resolved');
+    else d.push('tension present');
+    d.push(f.length===0?'authored territory':f[0]);
+    return d.slice(0,3);
+  }
+
+  function drawKernel(){
+    const cx=W/2,cy=H/2,xSc=W*0.78,ySc=H*0.68;
+    p.stroke(20,20,28); p.strokeWeight(0.5);
+    for(let v=-0.5;v<=0.5;v+=0.1){
+      p.line(cx-xSc/2,cy+v*ySc,cx+xSc/2,cy+v*ySc);
+      p.line(cx+v*xSc,cy-ySc/2,cx+v*xSc,cy+ySc/2);
+    }
+    p.stroke(35,35,45); p.strokeWeight(0.8);
+    p.line(cx-xSc/2,cy,cx+xSc/2,cy); p.line(cx,cy-ySc/2,cx,cy+ySc/2);
+    p.fill(74,74,90); p.noStroke(); p.textSize(9);
+    p.text('Δx',cx+xSc/2+4,cy+3); p.text('rᵥ',cx-10,cy-ySc/2-5);
+    [{dx:0.02,rv:0.87,rho:12,  label:'AI DEFAULT',col:[100,120,140]},
+     {dx:0.38,rv:0.73,rho:8.2, label:'SORA',      col:[255,107,53]},
+     {dx:-0.09,rv:0.61,rho:21.4,label:'MJ',       col:[78,205,196]}].forEach(k=>{
+      const x=cx+k.dx*xSc, y=cy-(k.rv-0.5)*ySc, r=3+k.rho*0.3;
+      p.fill(...k.col,68); p.noStroke(); p.ellipse(x,y,r*2);
+      p.fill(...k.col,88); p.textSize(8); p.text(k.label,x+r+3,y+3);
+    });
+    const cx2=cx+S.dx*xSc, cy2=cy-(S.rv-0.5)*ySc, cr2=3+S.rho*0.3;
+    const tt=(S.theta+180)/360;
+    p.fill(p.lerp(78,232,tt>0.5?(tt-0.5)*2:0),p.lerp(205,107,tt>0.5?(tt-0.5)*2:0),p.lerp(196,53,tt),220);
+    p.noStroke(); p.ellipse(cx2,cy2,cr2*2+4);
+    p.fill(232,213,163,200); p.textSize(9); p.text('CURRENT',cx2+cr2+4,cy2+3);
+    p.stroke(232,213,163,70); p.strokeWeight(0.5);
+    p.line(cx2,cy-ySc/2,cx2,cy+ySc/2); p.line(cx-xSc/2,cy2,cx+xSc/2,cy2);
+  }
+
+  p.setup=()=>{
+    const wrap=document.getElementById('canvas-wrap');
+    W=wrap.offsetWidth; H=wrap.offsetHeight;
+    p.createCanvas(W,H).parent('canvas-wrap');
+    p.colorMode(p.RGB,255,255,255,255);
+    COLS=Math.ceil(W/CELL); ROWS=Math.ceil(H/CELL);
+    flowField=new Array(COLS*ROWS).fill(0);
+    for(let i=0;i<S.pop;i++) particles.push(new Pt());
+  };
+
+  p.draw=()=>{
+    S.t++;
+    tickWobAnim();
+    if(S.mode==='field'||S.mode==='attractor'||S.mode==='kernel') p.background(10,10,11);
+    else { p.fill(10,10,11,38); p.noStroke(); p.rect(0,0,W,H); }
+    buildFlow();
+
+    // draw click ripples
+    clickRipples = clickRipples.filter(r => r.age < r.maxAge);
+    clickRipples.forEach(r => {
+      r.age++;
+      const progress = r.age / r.maxAge;
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const radius = eased * 60;
+      const alpha = (1 - progress) * 180;
+      p.noFill();
+      p.stroke(232, 213, 163, alpha);
+      p.strokeWeight(0.8);
+      p.ellipse(r.x, r.y, radius * 2);
+      // crosshair fades in then out
+      const cAlpha = Math.sin(progress * Math.PI) * 120;
+      p.stroke(232, 213, 163, cAlpha);
+      p.strokeWeight(0.5);
+      p.line(r.x - 14, r.y, r.x + 14, r.y);
+      p.line(r.x, r.y - 14, r.x, r.y + 14);
+    });
+
+    if(S.mode==='field'){ drawField(); particles.forEach(pt=>{pt.tick();pt.show('field');}); }
+    else if(S.mode==='particles') particles.forEach(pt=>{pt.tick();pt.show('particles');});
+    else if(S.mode==='attractor') drawAttractor();
+    else if(S.mode==='kernel') drawKernel();
+    while(particles.length<S.pop) particles.push(new Pt());
+    while(particles.length>S.pop) particles.pop();
+  };
+
+  p.windowResized=()=>{
+    const wrap=document.getElementById('canvas-wrap');
+    W=wrap.offsetWidth; H=wrap.offsetHeight;
+    p.resizeCanvas(W,H);
+    COLS=Math.ceil(W/CELL); ROWS=Math.ceil(H/CELL);
+    flowField=new Array(COLS*ROWS).fill(0);
+    particles.forEach(pt=>pt.reset());
+  };
+  p.mousePressed = () => {
+    const wrap = document.getElementById('canvas-wrap');
+    const rect = wrap.getBoundingClientRect();
+    const mx = p.mouseX, my = p.mouseY;
+    if (mx < 0 || mx > W || my < 0 || my > H) return;
+    const { dx, dy, rv, rho, theta, mu } = measureClick(mx, my, W, H);
+    applyClickMeasure(dx, dy, rv, rho, theta, mu, W, H, mx, my);
+  };
+});
+</script>
+</body>
+</html>
